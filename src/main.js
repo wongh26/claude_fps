@@ -425,7 +425,9 @@ function startOnline() {
   G.wantRematch = G.remoteRematch = false;
   $('nameA').textContent = myName.toUpperCase(); $('nameB').textContent = oppName.toUpperCase();
   $('topbar').hidden = false;
-  $('netTag').textContent = 'ONLINE DUEL' + (G.roomCode ? ' · ROOM ' + G.roomCode : '');
+  G.netTag = 'ONLINE DUEL' + (G.roomCode ? ' · ROOM ' + G.roomCode : '');
+  G.away = null;
+  $('netTag').textContent = G.netTag;
   beginPlay();
 }
 
@@ -434,6 +436,7 @@ function beginPlay() {
   $('hud').hidden = false;
   $('goalN').textContent = SCORE_TO_WIN;
   G.running = true; G.paused = false;
+  G.startedAt = performance.now();
   updateScore();
   lockPointer();
   callout(G.mode === 'practice' && !G.bots.length ? 'FREE ROAM' : 'FIGHT!', '#ffc94a');
@@ -749,7 +752,16 @@ function simulate(dt) {
     brain.update(dt, { physics, nav }, p);
     f.update(dt, gameApi);
   }
-  if (G.remote) G.remote.sample();
+  if (G.remote) {
+    G.remote.sample();
+    // A background tab stops sending snapshots: say so instead of showing a frozen or missing rival.
+    const lastSnap = G.remote.buf.length ? G.remote.buf[G.remote.buf.length - 1].at : G.startedAt;
+    const away = performance.now() - lastSnap > 2000;
+    if (away !== G.away) {
+      G.away = away;
+      $('netTag').textContent = G.netTag + (away ? ' · waiting for ' + oppName + ' (their game tab is in the background)' : '');
+    }
+  }
   updateBombs(dt);
   updateRemoteBomb();
 

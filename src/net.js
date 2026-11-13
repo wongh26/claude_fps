@@ -10,10 +10,13 @@ export class Net {
     this.peer = null; this.conn = null; this.bc = null;
     this.isHost = false; this.connected = false;
     this.lastMsg = 0;
-    // If the opponent's browser dies, the data channel can take 30 s+ to close (or never does).
-    // Snapshots arrive 20x a second, so 5 s of silence means they're gone.
+    // Heartbeat, on a timer rather than the render loop: a background tab stops rendering
+    // (so it stops sending game snapshots) but must not look like a dead opponent.
+    // If nothing at all arrives for 10 s, the other browser has really gone.
     setInterval(() => {
-      if (this.connected && performance.now() - this.lastMsg > 5000) this._lost('Your opponent timed out.');
+      if (!this.connected) return;
+      this.send({ t: '_ping' });
+      if (performance.now() - this.lastMsg > 10000) this._lost('Your opponent timed out.');
     }, 1000);
   }
 
@@ -22,6 +25,7 @@ export class Net {
 
   _onMessage(msg) {
     this.lastMsg = performance.now();
+    if (msg?.t === '_ping') return;
     if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
     this._emit('msg', msg);
   }
