@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riftline</title>
+<meta name="description" content="Riftline: a browser hero shooter. Practise against bots or duel a friend online, peer to peer.">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }
+</script>
+<script src="vendor/peerjs.min.js"></script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<!-- ============ HUD ============ -->
+<div id="hud" hidden>
+  <div id="fxTint"></div>
+  <div id="hurt"></div>
+  <div id="blinkFlash"></div>
+
+  <div id="cross"><i></i></div>
+  <div id="hitmark"><i></i><i></i><i></i><i></i></div>
+  <div id="pips"><b></b><b></b><b></b></div>
+
+  <div id="topbar">
+    <div class="team you"><span id="nameA">YOU</span><b id="scoreA">0</b></div>
+    <div id="goal">FIRST TO <span id="goalN">10</span></div>
+    <div class="team them"><b id="scoreB">0</b><span id="nameB">BOTS</span></div>
+  </div>
+  <div id="netTag"></div>
+  <div id="feed"></div>
+  <div id="callout"></div>
+
+  <div id="dead" hidden><b>ELIMINATED</b><span id="deadBy"></span><em id="deadT"></em></div>
+
+  <div id="bl">
+    <div id="portrait"><div class="helm"></div><div class="visor"></div></div>
+    <div>
+      <div id="hpText"><b id="hpNum">150</b><span>/ 150</span></div>
+      <div id="hpBar"></div>
+    </div>
+  </div>
+
+  <div id="ult"><svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="44"/><circle id="ultArc" cx="50" cy="50" r="44"/></svg><span id="ultPct">0%</span><em>Q</em></div>
+
+  <div id="br">
+    <div id="ammo"><b id="ammoNum">40</b><span>/ 40</span></div>
+    <div id="abilities">
+      <div class="ab" id="abBlink"><div class="icon blink"></div><span class="cd"></span><span class="charges"></span><em>SHIFT</em></div>
+      <div class="ab" id="abRewind"><div class="icon rewind"></div><span class="cd"></span><em>E</em></div>
+    </div>
+  </div>
+  <div id="nolock" hidden>Mouse capture isn't available in this frame. Open the page in its own tab to play.</div>
+</div>
+
+<!-- ============ MENU ============ -->
+<div class="overlay" id="menu">
+  <div class="panel">
+    <h1>RIFT<span>LINE</span></h1>
+    <p class="sub">Fast first-person duels. Practise against bots, or play a friend online.</p>
+    <div id="touchNote" hidden>This is a keyboard-and-mouse game. Open it on a computer to play.</div>
+
+    <div class="heroCard">
+      <div class="heroArt"><div class="helm"></div><div class="visor"></div></div>
+      <div>
+        <div class="heroName">VESPER <small>Skirmisher · 150 HP</small></div>
+        <ul class="kit">
+          <li><i>LMB</i><b>Twin Pistols</b> Rapid fire. Damage falls off with range.</li>
+          <li><i>SHIFT</i><b>Skip</b> Teleport a short way in the direction you're moving. 3 charges.</li>
+          <li><i>E</i><b>Rewind</b> Snap back to where you were 3 seconds ago, with that health and full ammo.</li>
+          <li><i>Q</i><b>Tick Charge</b> Ultimate. Throw a sticky charge that blows up after 1 second.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="modes">
+      <section>
+        <h2>Practice</h2>
+        <div class="row">
+          <label>Bots <select id="botCount"><option>1</option><option selected>2</option><option>3</option></select></label>
+          <label>Skill <select id="botSkill"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></label>
+        </div>
+        <button class="btn" id="btnPractice">PLAY</button>
+      </section>
+      <section>
+        <h2>Online duel</h2>
+        <button class="btn alt" id="btnHost">HOST A ROOM</button>
+        <div class="row join"><input id="joinCode" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false"><button class="btn alt" id="btnJoin">JOIN</button></div>
+      </section>
+    </div>
+
+    <div id="lobby" hidden>
+      <div>Room code <b id="roomCode">-----</b></div>
+      <div class="row"><input id="shareLink" readonly><button class="btn small" id="btnCopy">COPY LINK</button></div>
+      <div id="lobbyMsg">Waiting for your opponent to join…</div>
+      <button class="btn small ghost" id="btnCancel">CANCEL</button>
+    </div>
+    <div id="menuMsg"></div>
+
+    <div class="row settings">
+      <label>Mouse sensitivity <input id="sens" type="range" min="0.2" max="3" step="0.05" value="1"><span id="sensVal">1.00</span></label>
+      <label><input type="checkbox" id="invertY"> Invert Y</label>
+    </div>
+    <div class="keys"><b>WASD</b> move · <b>SPACE</b> jump · <b>LMB</b> fire · <b>SHIFT</b>/<b>RMB</b> Skip · <b>E</b> Rewind · <b>Q</b> Tick Charge · <b>R</b> reload · <b>ESC</b> menu</div>
+  </div>
+</div>
+
+<div class="overlay" id="pause" hidden>
+  <div class="panel small">
+    <h1>PAUSED</h1>
+    <p class="sub" id="pauseNote"></p>
+    <button class="btn" id="btnResume">RESUME</button>
+    <button class="btn small ghost" id="btnQuit">LEAVE MATCH</button>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="panel small">
+    <h1 id="overTitle">VICTORY</h1>
+    <p class="sub" id="overScore"></p>
+    <button class="btn" id="btnAgain">PLAY AGAIN</button>
+    <div id="overMsg"></div>
+    <button class="btn small ghost" id="btnMenu">MAIN MENU</button>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
