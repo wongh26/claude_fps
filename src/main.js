@@ -522,6 +522,8 @@ net.on('connected', () => {
     setTimeout(startOnline, 150);
   }
 });
+net.on('joining', () => { if (!$('lobby').hidden) $('lobbyMsg').textContent = 'A player is connecting…'; });
+net.on('joinFailed', (msg) => { if (net.isHost && !$('lobby').hidden) $('lobbyMsg').textContent = 'A player tried to join but it failed. Still waiting… (' + msg + ')'; });
 net.on('lobbyError', (msg) => { if (!$('lobby').hidden) $('lobbyMsg').textContent = msg; });
 net.on('disconnected', (reason) => {
   if (G.mode === 'online' || !$('lobby').hidden || net.isHost === false) toMenu(reason || 'Connection lost.');

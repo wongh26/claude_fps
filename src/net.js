@@ -34,8 +34,16 @@ export class Net {
     this.conn = conn;
     conn.on('open', () => { this.connected = true; this.lastMsg = performance.now(); this._emit('connected'); });
     conn.on('data', (d) => this._onMessage(d));
-    conn.on('close', () => this._lost('Your opponent left the match.'));
-    conn.on('error', (e) => this._lost('Connection error: ' + (e?.type || e?.message || e)));
+    const gone = (reason) => {
+      if (this.conn !== conn) return;          // an old attempt that was already replaced
+      if (this.connected) { this._lost(reason); return; }
+      this.conn = null;                        // attempt failed before it opened: free the seat
+      this._joinReject?.(reason);
+      this._emit('joinFailed', reason);
+    };
+    conn.on('close', () => gone('Your opponent left the match.'));
+    conn.on('error', (e) => gone('Connection error: ' + (e?.type || e?.message || e)));
+    conn.on('iceStateChanged', (state) => { if (state === 'failed') gone(NAT_MSG); });
   }
 
   _lost(reason) {
@@ -57,8 +65,13 @@ export class Net {
       this.peer = new window.Peer(PREFIX + code);
       this.peer.on('open', () => resolve(code));
       this.peer.on('connection', (c) => {
-        if (this.conn) { c.on('open', () => { c.send({ t: 'full' }); setTimeout(() => c.close(), 300); }); return; }
+        if (this.connected) { c.on('open', () => { c.send({ t: 'full' }); setTimeout(() => c.close(), 300); }); return; }
+        // A previous join attempt that never finished must not block the room.
+        const stale = this.conn; this.conn = null;
+        try { stale?.close(); } catch { /* ignore */ }
         this._attach(c);
+        this._emit('joining');
+        setTimeout(() => { if (this.conn === c && !this.connected) { this.conn = null; try { c.close(); } catch { /* ignore */ } this._emit('joinFailed', NAT_MSG); } }, 25000);
       });
       let opened = false;
       this.peer.on('open', () => { opened = true; });
@@ -84,8 +97,11 @@ export class Net {
     this._needPeerJS();
     return new Promise((resolve, reject) => {
       this.peer = new window.Peer();
-      const timer = setTimeout(() => reject(new Error('Could not reach that room. Check the code and that the host is still waiting.')), 15000);
+      let foundBroker = false;
+      const timer = setTimeout(() => reject(new Error(foundBroker ? NAT_MSG : 'Could not reach the matchmaking server. Check your connection.')), 25000);
+      this._joinReject = (reason) => { clearTimeout(timer); reject(new Error(reason)); };
       this.peer.on('open', () => {
+        foundBroker = true;
         const c = this.peer.connect(PREFIX + code, { reliable: true, serialization: 'json' });
         this._attach(c);
         c.on('open', () => { clearTimeout(timer); resolve(); });
@@ -133,12 +149,15 @@ export class Net {
 
   close() {
     this.connected = false;
+    this._joinReject = null;
     try { this.bc?.postMessage({ t: '_bye', from: this.isHost ? 'host' : 'guest' }); this.bc?.close(); } catch { /* ignore */ }
     try { this.conn?.close(); } catch { /* ignore */ }
     try { this.peer?.destroy(); } catch { /* ignore */ }
     this.bc = this.conn = this.peer = null;
   }
 }
+
+const NAT_MSG = 'Found the other player, but your two networks would not connect directly (a firewall or strict router is blocking it). Try a different network, such as a phone hotspot, or turn off any VPN.';
 
 function friendlyError(e) {
   const t = e?.type;
