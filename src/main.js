@@ -646,7 +646,7 @@ function readInput(dt) {
   inp.jump = canAct && keys.has('Space');
   inp.fire = canAct && mouseDown;
   if (!p.rewinding) {
-    const k = 0.0022 * settings.sens;
+    const k = 0.004 * settings.sens; // radians per mouse count at sensitivity 1
     p.yaw -= look.dx * k;
     p.pitch = clamp(p.pitch - look.dy * k * (settings.invert ? -1 : 1), -1.5, 1.5);
   }
