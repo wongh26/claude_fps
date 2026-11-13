@@ -9,19 +9,26 @@ export class Net {
     this.handlers = {};
     this.peer = null; this.conn = null; this.bc = null;
     this.isHost = false; this.connected = false;
+    this.lastMsg = 0;
+    // If the opponent's browser dies, the data channel can take 30 s+ to close (or never does).
+    // Snapshots arrive 20x a second, so 5 s of silence means they're gone.
+    setInterval(() => {
+      if (this.connected && performance.now() - this.lastMsg > 5000) this._lost('Your opponent timed out.');
+    }, 1000);
   }
 
   on(type, fn) { this.handlers[type] = fn; }
   _emit(type, data) { this.handlers[type]?.(data); }
 
   _onMessage(msg) {
+    this.lastMsg = performance.now();
     if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
     this._emit('msg', msg);
   }
 
   _attach(conn) {
     this.conn = conn;
-    conn.on('open', () => { this.connected = true; this._emit('connected'); });
+    conn.on('open', () => { this.connected = true; this.lastMsg = performance.now(); this._emit('connected'); });
     conn.on('data', (d) => this._onMessage(d));
     conn.on('close', () => this._lost('Your opponent left the match.'));
     conn.on('error', (e) => this._lost('Connection error: ' + (e?.type || e?.message || e)));
@@ -49,11 +56,20 @@ export class Net {
         if (this.conn) { c.on('open', () => { c.send({ t: 'full' }); setTimeout(() => c.close(), 300); }); return; }
         this._attach(c);
       });
+      let opened = false;
+      this.peer.on('open', () => { opened = true; });
       this.peer.on('error', (e) => {
-        if (!this.connected) reject(new Error(friendlyError(e)));
-        else this._lost(friendlyError(e));
+        if (this.connected) return; // the match runs over the data channel, not the broker
+        if (!opened) reject(new Error(friendlyError(e)));
+        else this._emit('lobbyError', friendlyError(e));
       });
-      this.peer.on('disconnected', () => { if (!this.connected) reject(new Error('Lost contact with the matchmaking server.')); });
+      this.peer.on('disconnected', () => {
+        if (this.connected) return;
+        if (!opened) { reject(new Error('Lost contact with the matchmaking server.')); return; }
+        // Still waiting in the lobby: try to get back onto the broker so the guest can find us.
+        this._emit('lobbyError', 'Lost contact with the matchmaking server. Reconnecting…');
+        try { this.peer.reconnect(); } catch { /* destroyed */ }
+      });
     });
   }
 
@@ -70,7 +86,7 @@ export class Net {
         this._attach(c);
         c.on('open', () => { clearTimeout(timer); resolve(); });
       });
-      this.peer.on('error', (e) => { clearTimeout(timer); if (!this.connected) reject(new Error(friendlyError(e))); else this._lost(friendlyError(e)); });
+      this.peer.on('error', (e) => { if (this.connected) return; clearTimeout(timer); reject(new Error(friendlyError(e))); });
     });
   }
 
@@ -81,6 +97,7 @@ export class Net {
     this.bc.onmessage = (e) => {
       const m = e.data;
       if (m.from === me) return;
+      this.lastMsg = performance.now();
       if (m.t === '_hello') {
         if (!this.connected) {
           this.connected = true;

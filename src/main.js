@@ -199,7 +199,6 @@ function fireShot(f, side) {
   if (t < 80) fx.spark(end, target ? 0xffffff : 0xfff1c4, target ? 0.45 : 0.3);
   if (f === G.player) {
     vm.shot(side); play('shot', 1);
-    G.recoil = Math.min(0.03, (G.recoil || 0) + 0.004);
     if (G.mode === 'online') net.send({ t: 'shot', o: from.toArray().map(r2), e: end.toArray().map(r2) });
   } else play('shot', soundVol(f.pos));
   if (target) applyHit(f, target, HERO.dmg * falloff(t) * (head ? HERO.headMult : 1), head);
@@ -237,10 +236,14 @@ function onKill(killer, victim) {
 }
 
 function checkWin() {
+  // Online, the host is the referee so both screens always agree on the result.
+  if (G.mode === 'online' && !net.isHost) return;
   const mine = G.player.kills;
   const theirs = G.mode === 'online' ? (G.remote?.kills ?? 0) : G.bots.reduce((s, b) => s + b.f.kills, 0);
-  if (mine >= SCORE_TO_WIN) endMatch(true, mine, theirs);
-  else if (theirs >= SCORE_TO_WIN) endMatch(false, mine, theirs);
+  const done = mine >= SCORE_TO_WIN || theirs >= SCORE_TO_WIN;
+  if (!done) return;
+  if (G.mode === 'online') net.send({ t: 'end', a: mine, b: theirs }); // host's score first
+  endMatch(mine >= SCORE_TO_WIN, mine, theirs);
 }
 
 // ---------------------------------------------------------------- Tick Charge (ultimate)
@@ -514,6 +517,7 @@ net.on('connected', () => {
     setTimeout(startOnline, 150);
   }
 });
+net.on('lobbyError', (msg) => { if (!$('lobby').hidden) $('lobbyMsg').textContent = msg; });
 net.on('disconnected', (reason) => {
   if (G.mode === 'online' || !$('lobby').hidden || net.isHost === false) toMenu(reason || 'Connection lost.');
 });
@@ -549,6 +553,13 @@ net.on('msg', (m) => {
     case 'rewind': play('rewind'); break;
     case 'stuck': callout('YOU HAVE BEEN STUCK!', '#ff4d5e'); play('stick'); break;
     case 'boom': { const p = new THREE.Vector3().fromArray(m.p); fx.explosion(p, HERO.bomb.radius); play('boom', soundVol(p)); break; }
+    case 'end': // from the host: its kills are `a`, ours are `b`
+      if (!net.isHost && !G.over) {
+        G.player.kills = +m.b || 0; if (r) r.kills = +m.a || 0;
+        updateScore();
+        endMatch(G.player.kills > (r?.kills ?? 0), G.player.kills, r?.kills ?? 0);
+      }
+      break;
     case 'rematch':
       G.remoteRematch = true;
       $('overMsg').textContent = oppName + ' wants a rematch!';
@@ -585,7 +596,7 @@ addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') { if (e.code === 'Enter' && e.target.id === 'joinCode') joinRoom(e.target.value); return; }
   keys.add(e.code);
   const p = G.player;
-  if (!p || !G.running || G.paused) return;
+  if (!p || !G.running || G.paused || !p.alive || !locked()) return;
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') p.input.blink = true;
   if (e.code === 'KeyE') p.input.rewind = true;
   if (e.code === 'KeyQ') p.input.ult = true;
@@ -598,7 +609,7 @@ canvas.addEventListener('mousedown', (e) => {
   if (!G.running || G.over) return;
   if (!locked()) { lockPointer(); return; }
   if (e.button === 0) mouseDown = true;
-  if (e.button === 2 && G.player) G.player.input.blink = true;
+  if (e.button === 2 && G.player?.alive) G.player.input.blink = true;
 });
 addEventListener('mouseup', (e) => { if (e.button === 0) mouseDown = false; });
 addEventListener('contextmenu', (e) => e.preventDefault());
@@ -619,7 +630,11 @@ document.addEventListener('pointerlockchange', () => {
     $('pause').hidden = false;
   }
 });
-document.addEventListener('pointerlockerror', () => { $('nolock').hidden = false; });
+document.addEventListener('pointerlockerror', () => {
+  if (window.top !== window) { $('nolock').hidden = false; return; }
+  // Browsers refuse to re-capture the mouse for about a second after Esc.
+  $('pauseNote').textContent = 'Click again to resume.';
+});
 
 function readInput(dt) {
   const p = G.player;
@@ -635,8 +650,6 @@ function readInput(dt) {
     p.yaw -= look.dx * k;
     p.pitch = clamp(p.pitch - look.dy * k * (settings.invert ? -1 : 1), -1.5, 1.5);
   }
-  // Recoil climbs while firing and settles back.
-  p.pitch = clamp(p.pitch + (inp.fire && p.fireCd > HERO.fireInterval - dt * 1.5 ? 0.0035 : 0), -1.5, 1.5);
 }
 
 // ---------------------------------------------------------------- HUD
