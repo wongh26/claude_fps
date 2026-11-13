@@ -407,8 +407,9 @@ function startPractice() {
   }
   respawn(G.player, pick(world.spawns[0]));
   for (const b of G.bots) respawn(b.f, world.spawns[1][G.bots.indexOf(b) % 3]);
-  $('nameA').textContent = 'YOU'; $('nameB').textContent = n > 1 ? 'BOTS' : G.bots[0].f.name.toUpperCase();
-  $('netTag').textContent = 'PRACTICE · ' + skill.toUpperCase();
+  $('nameA').textContent = 'YOU'; $('nameB').textContent = n > 1 ? 'BOTS' : n === 1 ? G.bots[0].f.name.toUpperCase() : '';
+  $('netTag').textContent = n ? 'PRACTICE · ' + skill.toUpperCase() : 'FREE ROAM · no bots';
+  $('topbar').hidden = n === 0; // nothing to score against
   beginPlay();
 }
 
@@ -423,6 +424,7 @@ function startOnline() {
   respawn(G.player, world.spawns[myTeam][0]);
   G.wantRematch = G.remoteRematch = false;
   $('nameA').textContent = myName.toUpperCase(); $('nameB').textContent = oppName.toUpperCase();
+  $('topbar').hidden = false;
   $('netTag').textContent = 'ONLINE DUEL' + (G.roomCode ? ' · ROOM ' + G.roomCode : '');
   beginPlay();
 }
@@ -434,7 +436,7 @@ function beginPlay() {
   G.running = true; G.paused = false;
   updateScore();
   lockPointer();
-  callout('FIGHT!', '#ffc94a');
+  callout(G.mode === 'practice' && !G.bots.length ? 'FREE ROAM' : 'FIGHT!', '#ffc94a');
   // An online match can start from a network event, where the browser refuses mouse capture.
   // Ask for a click instead.
   setTimeout(() => {
@@ -733,6 +735,8 @@ function simulate(dt) {
   readInput(dt);
   look.dx = look.dy = 0;
 
+  // Free roam (no bots): charge the ultimate quickly so it can be practised.
+  if (G.mode === 'practice' && !G.bots.length) p.ult = Math.min(1, p.ult + dt / 15);
   if (p.alive) p.update(dt, gameApi);
   else if (!G.over) {
     p.respawnT -= dt;

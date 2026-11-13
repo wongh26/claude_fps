@@ -5,7 +5,7 @@ It has no build step or server, so it runs directly on GitHub Pages.
 
 ## Play
 
-- **Practice:** 1 to 3 bots (Easy, Normal or Hard). First to 10 eliminations wins.
+- **Practice:** 1 to 3 bots (Easy, Normal or Hard). First to 10 eliminations wins. Set Bots to **None** for free roam: no enemies or score, and the ultimate charges every 15 s so you can practise it.
 - **Online duel:** one player clicks **Host a room** and sends the link or the 5-letter code. The other player opens the link, or types the code and clicks **Join**.
 
 ### Hero: Vesper (Skirmisher, 150 HP)
